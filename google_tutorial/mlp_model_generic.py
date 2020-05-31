@@ -46,10 +46,10 @@ def ngram_vectorize(train_texts, train_labels, val_texts):
     selector.fit(x_train, train_labels)
     x_train = selector.transform(x_train).astype('float32')
     x_val = selector.transform(x_val).astype('float32')
-    return x_train, x_val, selector
+    return x_train, x_val, selector, vectorizer
 
 
-def mlp_model(layers, units, dropout_rate, input_shape, num_classes):
+def mlp_model(layers, units, dropout_rate, input_shape, num_classes, learning_rate, output_bias=None):
     """Creates an instance of a multi-layer perceptron model.
 
     # Arguments
@@ -62,23 +62,60 @@ def mlp_model(layers, units, dropout_rate, input_shape, num_classes):
     # Returns
         An MLP model instance.
     """
+    if output_bias is not None:
+        print("Adding output_bias")
+        output_bias = tf.keras.initializers.Constant(output_bias)
+
     op_units, op_activation = metric.get_last_layer_units_and_activation(num_classes)
     model = tf.keras.Sequential()
     model.add(tf.keras.layers.Dropout(rate=dropout_rate, input_shape=input_shape))
+    # model.add(tf.keras.layers.Dense(16, activation='relu', input_shape=input_shape))
 
     for _ in range(layers-1):
         model.add(tf.keras.layers.Dense(units=units, activation='relu'))
         model.add(tf.keras.layers.Dropout(rate=dropout_rate))
 
-    model.add(tf.keras.layers.Dense(units=op_units, activation=op_activation))
+    print("output_bias", output_bias)
+    model.add(tf.keras.layers.Dense(units=op_units, activation=op_activation, bias_initializer=output_bias))
+
+    METRICS = [
+              tf.keras.metrics.TruePositives(name='tp'),
+              tf.keras.metrics.FalsePositives(name='fp'),
+              tf.keras.metrics.TrueNegatives(name='tn'),
+              tf.keras.metrics.FalseNegatives(name='fn'),
+              tf.keras.metrics.BinaryAccuracy(name='accuracy'),
+              tf.keras.metrics.Precision(name='precision'),
+              tf.keras.metrics.Recall(name='recall'),
+              tf.keras.metrics.AUC(name='auc'),
+              ]
+
+    # Compile model with learning parameters.
+    if num_classes == 2:
+        loss = 'binary_crossentropy'
+    else:
+        loss = 'sparse_categorical_crossentropy'
+    optimizer = tf.keras.optimizers.Adam(lr=learning_rate)
+    model.compile(optimizer=optimizer, loss=loss, metrics=METRICS)
+
     return model
 
 
-def smote_f(features, labels):
-    # Set up some sklearn objects that are going to be in the pipeline
-    # SMOTE for class balancing via oversampling the minority class
-    smt = SMOTE(random_state=12)
-    return smt.fit_resample(features, labels)
+def get_class_weight(train_labels):
+    not_asshole = np.count_nonzero(train_labels == 0)
+    asshole = np.count_nonzero(train_labels)
+    print("There is ", asshole, " asshole and ", not_asshole, " not asshole")
+    total = not_asshole + asshole
+
+    # Scaling by total/2 helps keep the loss to a similar magnitude.
+    # The sum of the weights of all examples stays the same.
+    weight_for_not_asshole = (1 / not_asshole)*(total)/2.0
+    weight_for_assole = (1 / asshole)*(total)/2.0
+
+    class_weight = {0: weight_for_not_asshole, 1: weight_for_assole}
+
+    print('Weight for class 0: {:.2f}'.format(weight_for_not_asshole))
+    print('Weight for class 1: {:.2f}'.format(weight_for_assole))
+    return class_weight
 
 
 def train_ngram_model(data,
@@ -123,21 +160,8 @@ def train_ngram_model(data,
                          'as training labels.'.format(
                              unexpected_labels=unexpected_labels))
 
-    not_asshole = np.count_nonzero(train_labels==0)
-    asshole = np.count_nonzero(train_labels)
-    print("There is ", asshole, " asshole and ", not_asshole, " not asshole")
-    total = not_asshole + asshole
 
-    # Scaling by total/2 helps keep the loss to a similar magnitude.
-    # The sum of the weights of all examples stays the same.
-    weight_for_not_asshole = (1 / not_asshole)*(total)/2.0
-    weight_for_assole = (1 / asshole)*(total)/2.0
-
-    class_weight = {0: weight_for_not_asshole, 1: weight_for_assole}
-
-    print('Weight for class 0: {:.2f}'.format(weight_for_not_asshole))
-    print('Weight for class 1: {:.2f}'.format(weight_for_assole))
-
+    class_weights = get_class_weight(train_labels)
 
     # print("text", x_train)
     # Vectorize texts.
@@ -153,6 +177,7 @@ def train_ngram_model(data,
 
     # Create model instance.
     # x_train.shape[1:]
+
     model = mlp_model(layers=layers,
                       units=units,
                       dropout_rate=dropout_rate,
@@ -161,6 +186,16 @@ def train_ngram_model(data,
 
     # model.load_weights(initial_weights)
 
+    METRICS = [
+              tf.keras.metrics.TruePositives(name='tp'),
+              tf.keras.metrics.FalsePositives(name='fp'),
+              tf.keras.metrics.TrueNegatives(name='tn'),
+              tf.keras.metrics.FalseNegatives(name='fn'),
+              tf.keras.metrics.BinaryAccuracy(name='accuracy'),
+              tf.keras.metrics.Precision(name='precision'),
+              tf.keras.metrics.Recall(name='recall'),
+              tf.keras.metrics.AUC(name='auc'),
+              ]
 
     # Compile model with learning parameters.
     if num_classes == 2:
@@ -168,7 +203,7 @@ def train_ngram_model(data,
     else:
         loss = 'sparse_categorical_crossentropy'
     optimizer = tf.keras.optimizers.Adam(lr=learning_rate)
-    model.compile(optimizer=optimizer, loss=loss, metrics=['acc'])
+    model.compile(optimizer=optimizer, loss=loss, metrics=METRICS)
 
     # Create callback for early stopping on validation loss. If the loss does
     # not decrease in two consecutive tries, stop training.
@@ -183,7 +218,7 @@ def train_ngram_model(data,
             validation_data=(x_val, val_labels),
             verbose=1,  # Logs once per epoch.
             batch_size=batch_size,
-            class_weight=class_weight)
+            class_weight=class_weights)
 
     # Print results.
     history = history.history

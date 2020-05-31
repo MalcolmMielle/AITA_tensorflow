@@ -106,7 +106,7 @@ def plot_sample_length_distribution(sample_texts):
     plt.xlabel('Length of a sample')
     plt.ylabel('Number of samples')
     plt.title('Sample length distribution')
-    plt.show()
+    # plt.show()
 
 
 def plot_class_distribution(labels):
@@ -125,7 +125,7 @@ def plot_class_distribution(labels):
     plt.ylabel('Number of samples')
     plt.title('Class distribution')
     plt.xticks(idx, idx)
-    plt.show()
+    # plt.show()
 
 
 def get_last_layer_units_and_activation(num_classes):

@@ -1,6 +1,8 @@
 import pandas
-import metric
-import get_data
+from utils import metric
+from utils import get_data
+import matplotlib.pyplot as plt
+
 
 # %% codecell
 df = pandas.read_csv("../data/aita_clean.csv")
@@ -26,7 +28,12 @@ print("Num classes:", num_classes)
 print("Median number of word per sample:", num_word_sample)
 
 metric.plot_sample_length_distribution(df.text.to_numpy())
+fig = plt.gcf()
+fig.savefig('length_distrib.jpg')
+plt.show()
 metric.plot_class_distribution(df.is_asshole.to_numpy())
+fig = plt.gcf()
+fig.savefig('class_distrib.jpg')
 
 # %% codecell
 number_of_samples = len(df.text)
